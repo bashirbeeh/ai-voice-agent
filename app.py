@@ -42,7 +42,7 @@ def gpt():
             raise ValueError("No speech input detected")
 
         # ✅ API key now pulled from environment
-	client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
         ai_reply = client.chat.completions.create(
             model="gpt-3.5-turbo",
