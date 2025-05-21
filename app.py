@@ -1,7 +1,46 @@
 from flask import Flask, request
 from twilio.twiml.voice_response import VoiceResponse, Gather
 import openai
+import requests
 import os
+from datetime import datetime
+
+def log_interaction(user_input, ai_reply):
+    timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+    with open("logs.txt", "a") as f:
+        f.write(f"{timestamp}\nCaller: {user_input}\nAI: {ai_reply}\n\n")
+def generate_speech_with_elevenlabs(text, filename="response.mp3"):
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+
+    headers = {
+        "xi-api-key": api_key,
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "text": text,
+        "model_id": "eleven_monolingual_v1",
+        "voice_settings": {
+            "stability": 0.4,
+            "similarity_boost": 0.75
+        }
+    }
+
+    response = requests.post(url, json=data, headers=headers)
+
+    if response.status_code == 200:
+        # Save MP3 to the /static folder
+        audio_path = os.path.join("static", filename)
+        with open(audio_path, "wb") as f:
+            f.write(response.content)
+        return f"/static/{filename}"
+    else:
+        print("Error generating speech:", response.text)
+        return None
+
 
 app = Flask(__name__)
 
@@ -61,16 +100,27 @@ def gpt():
         reply_text = ai_reply.choices[0].message.content
         print(f"AI reply: {reply_text}")
 
+        # ✅ Log the interaction
+        log_interaction(speech_text, reply_text)
+
     except Exception as e:
         print("Error:", e)
         reply_text = "Sorry, I had trouble processing that."
 
-    # Say the AI's reply
-    response.say(reply_text, voice="Polly.Joanna")
+    # ✅ Generate ElevenLabs audio for AI reply
+    audio_path = generate_speech_with_elevenlabs(reply_text, "response.mp3")
+    if audio_path:
+        response.play(audio_path)
+    else:
+        response.say("Sorry, I had trouble speaking the answer.", voice="Polly.Joanna")
 
     # 🧠 End call if user said goodbye
     if any(phrase in speech_text.lower() for phrase in ["no", "thank you", "i'm good", "bye", "goodbye"]):
-        response.say("You're welcome. Goodbye!", voice="Polly.Joanna")
+        goodbye_path = generate_speech_with_elevenlabs("You're welcome. Goodbye!", "goodbye.mp3")
+        if goodbye_path:
+            response.play(goodbye_path)
+        else:
+            response.say("You're welcome. Goodbye!", voice="Polly.Joanna")
         response.hangup()
     else:
         # 👇 Smarter follow-up
@@ -97,6 +147,7 @@ def gpt():
             response.append(gather)
 
     return str(response)
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
